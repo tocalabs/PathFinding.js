@@ -1,7 +1,7 @@
-var Heap       = require('heap');
-var Util       = require('../core/Util');
-var Heuristic  = require('../core/Heuristic');
-var DiagonalMovement = require('../core/DiagonalMovement');
+var Heap = require("heap");
+var Util = require("pathfinding/src/core/Util");
+var Heuristic = require("pathfinding/src/core/Heuristic");
+var DiagonalMovement = require("pathfinding/src/core/DiagonalMovement");
 
 /**
  * A* path-finder. Based upon https://github.com/bgrins/javascript-astar
@@ -9,13 +9,17 @@ var DiagonalMovement = require('../core/DiagonalMovement');
  * @param {Object} opt
  * @param {boolean} opt.allowDiagonal Whether diagonal movement is allowed.
  *     Deprecated, use diagonalMovement instead.
- * @param {boolean} opt.dontCrossCorners Disallow diagonal movement touching 
+ * @param {boolean} opt.dontCrossCorners Disallow diagonal movement touching
  *     block corners. Deprecated, use diagonalMovement instead.
  * @param {DiagonalMovement} opt.diagonalMovement Allowed diagonal movement.
  * @param {function} opt.heuristic Heuristic function to estimate the distance
  *     (defaults to manhattan).
  * @param {number} opt.weight Weight to apply to the heuristic to allow for
  *     suboptimal paths, in order to speed up the search.
+ * @param {number} opt.avoidStaircase Add penalties to discourage turning and
+ * causing a 'staircase' effect (defaults to false).
+ * @param {number} opt.turnPenalty Penalty to add to turning. Higher numbers
+ * discourage turning more (defaults to 1).
  */
 function AStarFinder(opt) {
     opt = opt || {};
@@ -24,6 +28,8 @@ function AStarFinder(opt) {
     this.heuristic = opt.heuristic || Heuristic.manhattan;
     this.weight = opt.weight || 1;
     this.diagonalMovement = opt.diagonalMovement;
+    this.avoidStaircase = opt.avoidStaircase;
+    this.turnPenalty = opt.turnPenalty || 1;
 
     if (!this.diagonalMovement) {
         if (!this.allowDiagonal) {
@@ -59,9 +65,20 @@ AStarFinder.prototype.findPath = function(startX, startY, endX, endY, grid) {
         endNode = grid.getNodeAt(endX, endY),
         heuristic = this.heuristic,
         diagonalMovement = this.diagonalMovement,
+        avoidStaircase = this.avoidStaircase,
+        turnPenalty = this.turnPenalty,
         weight = this.weight,
-        abs = Math.abs, SQRT2 = Math.SQRT2,
-        node, neighbors, neighbor, i, l, x, y, ng;
+        abs = Math.abs,
+        SQRT2 = Math.SQRT2,
+        lastDirection,
+        node,
+        neighbors,
+        neighbor,
+        i,
+        l,
+        x,
+        y,
+        ng;
 
     // set the `g` and `f` value of the start node to be 0
     startNode.g = 0;
@@ -96,13 +113,33 @@ AStarFinder.prototype.findPath = function(startX, startY, endX, endY, grid) {
 
             // get the distance between current node and the neighbor
             // and calculate the next g score
-            ng = node.g + ((x - node.x === 0 || y - node.y === 0) ? 1 : SQRT2);
+            ng = node.g + (x - node.x === 0 || y - node.y === 0 ? 1 : SQRT2);
+
+            // if we're avoiding staircasing, add penalties if the direction
+            // will change
+            if (avoidStaircase) {
+                lastDirection =
+                    node.parent === undefined
+                        ? undefined
+                        : {
+                              x: node.x - node.parent.x,
+                              y: node.y - node.parent.y
+                          };
+                var turned =
+                    lastDirection === undefined
+                        ? 0
+                        : lastDirection.x !== x - node.x ||
+                          lastDirection.y !== y - node.y;
+                ng += turnPenalty * turned;
+            }
 
             // check if the neighbor has not been inspected yet, or
             // can be reached with smaller cost from the current node
             if (!neighbor.opened || ng < neighbor.g) {
                 neighbor.g = ng;
-                neighbor.h = neighbor.h || weight * heuristic(abs(x - endX), abs(y - endY));
+                neighbor.h =
+                    neighbor.h ||
+                    weight * heuristic(abs(x - endX), abs(y - endY));
                 neighbor.f = neighbor.g + neighbor.h;
                 neighbor.parent = node;
 
